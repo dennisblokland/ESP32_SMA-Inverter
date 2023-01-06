@@ -102,8 +102,8 @@ void HexDump(uint8_t *buf, int count, int radix, uint8_t c) {
     uint16_t year = c;
     uint8_t  month = e;
     uint8_t  day = f;
-    return snprintf(buf, CHAR_BUF_SIZE,"%d.%02d.%d %02d:%02d:%02d",day, month, year, hours, minutes, seconds);
-    //DEBUG1_PRINTF(" GMT: %d.%02d.%d %02d:%02d:%02d",day, month, year, hours, minutes, seconds);
+    return snprintf(buf, 31,"%02d.%02d.%d %02d:%02d:%02d",day, month, year, hours, minutes, seconds);
+    //DEBUG1_PRINTF(" GMT: %02d.%02d.%d %02d:%02d:%02d",day, month, year, hours, minutes, seconds);
  }
 /// Convert a uint64_t (unsigned long long) to a string.
 /// Arduino String/toInt/Serial.print() can't handle printing 64 bit values.
