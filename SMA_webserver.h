@@ -25,6 +25,8 @@ SOFTWARE.
 #include <WebServer.h>
 
 WebServer server(80);
+#define HTTP_BUF_MAX 2048
+char httpBuf[HTTP_BUF_MAX];
 
 bool setupWebserver() {
   Serial.printf("Connecting to %s ", ssid);
@@ -33,10 +35,10 @@ bool setupWebserver() {
   WiFi.begin(ssid, password);
 
   int i=0;
-  for (i=0; i<101; i++) {
+  for (i=0; i<50; i++) {
     if (WiFi.status() == WL_CONNECTED) 
       break;
-    delay(100);
+    delay(500);
     Serial.print(".");
   }
   
@@ -51,36 +53,61 @@ bool setupWebserver() {
   return true;
 }
 
-void SMA_ServeAll() {
-char temp[1024];
-snprintf(temp, 1024,"<html><head><meta http-equiv=\"refresh\" content=\"%d\"><body>\n\
+void SmaServeTable() {
+int length = 0;
+uint32_t reloadSec;
+if (btConnected) reloadSec = (((nextTime-millis())/1000)+1); // wait until new values
+else             reloadSec = 60; 
+if (reloadSec>120) reloadSec = 10;
+
+length += snprintf(httpBuf+length, HTTP_BUF_MAX-length,
+      "<html><head><meta http-equiv=\"refresh\" content=\"%d\"><body>\n\
 <style type=\"text/css\">\n\
-#customers {align:middle; border-collapse:collapse;}\n\
-#customers td, #customers th {align:middle; text-align:center; font-size:30%; border:1px solid #98bf21; padding:3px 7px 2px 7px; }\n\
-#customers tr:nth-child(odd) {background:#EAF2D3;} .vCenter {display:flex;justify-content:center;margin:5px;}\n\
-</style> <table align=\"left\" id=\"customers\" vspace=5 style=\"margin-bottom:5px;\">\n\
-<tr><td>Pac</td><td>%1.3f kW</td></tr>\n\
-<tr><td>Udc</td><td>%1.1f V</td></tr>\n\
-<tr><td>Idc</td><td>%1.3f A</td></tr>\n\
-<tr><td>Uac</td><td>%1.1f V</td></tr>\n\
-<tr><td>Iac</td><td>%1.3f A</td></tr>\n\
-<tr><td>E-Today</td><td>%1.3f kWh</td></tr>\n\
-<tr><td>E-Total</td><td>%1.3f kWh</td></tr>\n\
-<tr><td>Frequency</td><td>%1.2f Hz</td></tr>\n\
-<tr><td>Efficiency</td><td> %1.2f %%</td></tr>\n\
-</table></body></html>"
-, LOOPTIME_SEC
-, tokW(pInvData->Pac)
-, toVolt(pInvData->Udc)
-, toAmp(pInvData->Idc)
-, toVolt(pInvData->Uac)
-, toAmp(pInvData->Iac)
-, tokWh(pInvData->EToday)
-, tokWh(pInvData->ETotal)
-, toHz(pInvData->Freq)
-, toPercent(pInvData->Eta)
-);
-  //server.send(200, "text/plain", temp);
-  server.send(200, "text/html", temp);
+#dT {align:middle; border-collapse:collapse;}\n\
+#dT td, #dT th {align:middle; text-align:center; font-size:30%; border:1px solid #98bf21; padding:3px 7px 2px 7px; }\n\
+#dT tr:nth-child(odd) {background:#EAF2D3;} .vCenter {display:flex;justify-content:center;margin:5px;}\n\
+progress {text-align: center;} progress:after{content: attr(value);} </style>\n\
+<progress value=\"%d\" max=\"%d\" id=\"pB\"></progress><br>\n\
+<table align=\"left\" id=\"dT\" vspace=5 style=\"margin-bottom:5px;\">\n", reloadSec, reloadSec, reloadSec);
+
+if (btConnected) {
+  length += snprintf(httpBuf+length, HTTP_BUF_MAX-length,
+"<tr><td>Pac</td><td>%1.3f kW</td></tr>\n\
+ <tr><td>Udc</td><td>%1.1f V</td></tr>\n\
+ <tr><td>Idc</td><td>%1.3f A</td></tr>\n\
+ <tr><td>Uac</td><td>%1.1f V</td></tr>\n\
+ <tr><td>Iac</td><td>%1.3f A</td></tr>\n"
+ , tokW(pInvData->Pac)
+ , toVolt(pInvData->Udc)
+ , toAmp(pInvData->Idc)
+ , toVolt(pInvData->Uac)
+ , toAmp(pInvData->Iac));
+} else {
+  length += snprintf(httpBuf+length, HTTP_BUF_MAX-length,
+        "<tr><td>Bluetooth</td><td>offline</td></tr>\n");
+}
+  length += snprintf(httpBuf+length, HTTP_BUF_MAX-length,
+"<tr><td>E-Today</td><td>%1.3f kWh</td></tr>\n\
+ <tr><td>E-Total</td><td>%1.3f kWh</td></tr>\n"
+ , tokWh(pInvData->EToday)
+ , tokWh(pInvData->ETotal));
+
+if (btConnected)
+  length += snprintf(httpBuf+length, HTTP_BUF_MAX-length,
+"<tr><td>Frequency</td><td>%1.2f Hz</td></tr>\n\
+ <tr><td>Efficiency</td><td> %1.2f %%</td></tr>\n"
+  , toHz(pInvData->Freq)
+  , toPercent(pInvData->Eta));
+  length += snprintf(httpBuf+length, HTTP_BUF_MAX-length, "<tr><td>Last-GMT</td><td>");
+  length += printUnixTime(httpBuf+length, pInvData->LastTime);
+  length += snprintf(httpBuf+length, HTTP_BUF_MAX-length, "</td></tr>\n");
+
+  length += snprintf(httpBuf+length, HTTP_BUF_MAX-length,
+"<script>var tm=%d;var dTimer=setInterval(function(){\n\
+if(tm<=0){clearInterval(dTimer);}\n\
+document.getElementById(\"pB\").value=tm;\n\ 
+tm -= 1;},1000); </script></body></html>", reloadSec);
+
+  server.send(200, "text/html", httpBuf);
 }
 

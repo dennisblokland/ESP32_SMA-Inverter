@@ -52,6 +52,9 @@ SOFTWARE.
   #define  DEBUG3_PRINTLN(...) /**/
 #endif
 
+#define CHAR_BUF_SIZE 24
+char charBuf[CHAR_BUF_SIZE];
+
 void HexDump(uint8_t *buf, int count, int radix, uint8_t c) {
   int i, j;
   DEBUG2_PRINTF("\n---%c----:", c);
@@ -66,7 +69,7 @@ void HexDump(uint8_t *buf, int count, int radix, uint8_t c) {
   DEBUG2_PRINT("\n");
 }
 //-----------------------------------------------------
- void printUnixTime(time_t t) {
+ uint8_t printUnixTime(char *buf, time_t t) {
     uint32_t a, b, c, d, e, f;
     //Negative Unix time values are not supported
     if(t < 1) t = 0;
@@ -99,8 +102,44 @@ void HexDump(uint8_t *buf, int count, int radix, uint8_t c) {
     uint16_t year = c;
     uint8_t  month = e;
     uint8_t  day = f;
-    DEBUG1_PRINTF(" GMT: %d.%02d.%d %02d:%02d:%02d",day, month, year, hours, minutes, seconds);
+    return snprintf(buf, CHAR_BUF_SIZE,"%d.%02d.%d %02d:%02d:%02d",day, month, year, hours, minutes, seconds);
+    //DEBUG1_PRINTF(" GMT: %d.%02d.%d %02d:%02d:%02d",day, month, year, hours, minutes, seconds);
  }
+/// Convert a uint64_t (unsigned long long) to a string.
+/// Arduino String/toInt/Serial.print() can't handle printing 64 bit values.
+/// @param[in] input The value to print
+/// @param[in] base The output base.
+/// @returns A String representation of the integer.
+/// @note Based on Arduino's Print::printNumber()
+String uint64ToString(uint64_t input, uint8_t base = 10)
+{
+  String result = "";
+  // prevent issues if called with base <= 1
+  if (base < 2)
+    base = 10;
+  // Check we have a base that we can actually print.
+  // i.e. [0-9A-Z] == 36
+  if (base > 36)
+    base = 10;
+
+  // Reserve some string space to reduce fragmentation.
+  // 16 bytes should store a uint64 in hex text which is the likely worst case.
+  // 64 bytes would be the worst case (base 2).
+  result.reserve(16);
+
+  do
+  {
+    char c = input % base;
+    input /= base;
+
+    if (c < 10)
+      c += '0';
+    else
+      c += 'A' - 10;
+    result = c + result;
+  } while (input);
+  return result;
+}
 
 //-----------------------------------------------------
 uint16_t get_u16(uint8_t *buf) {

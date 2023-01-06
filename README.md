@@ -7,18 +7,13 @@ The starting point for this project was the code posted by "SBFspot" and "ESP32_
 Many thanks for the work on these projects!
 
 SETUP:
-
-Modify SmaBTAddress[] and SmaInvPass[] array in ESP32_SMA-Inverter.ino file according your system.
-The SmaInvPass[] has always 12 character with 0x00 on the unused trailing character.
-If SMA_WEBSERVER is usend, modify ssid and password too.
-
+Copy Config_example.h to Config.h and modify SmaBTAddress and SmaInvPass.
+If SMA_WEBSERVER is usend, modify WIFI ssid and password too.
+The SmaInvPass has always 12 character with 0x00 on the unused trailing character.
 
 NOTES:
 
-
 TODO:
-
-
 
 KNOWN BUGS:
 

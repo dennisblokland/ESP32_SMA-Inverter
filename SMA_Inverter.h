@@ -65,6 +65,7 @@ struct InverterData {
     int32_t Eta;
     uint64_t EToday;
     uint64_t ETotal;
+    time_t   LastTime;
     uint64_t OperationTime;
     uint64_t FeedInTime;
     E_RC     status;
@@ -187,7 +188,7 @@ bool isValidSender(uint8_t expAddr[6], uint8_t isAddr[6]) {
 // ----------------------------------------------------------------------------------------------
 //unsigned int readBtPacket(int index, unsigned int cmdcodetowait) {
 E_RC getPacket(uint8_t expAddr[6], int wait4Command) {
-  DEBUG2_PRINTF("\ngetPacket command=0x%04x\n", wait4Command);
+  DEBUG3_PRINTF("getPacket command=0x%04x\n", wait4Command);
   int index = 0;
   bool hasL2pckt = false;
   E_RC rc = E_OK; 
@@ -227,7 +228,7 @@ E_RC getPacket(uint8_t expAddr[6], int wait4Command) {
       if (isValidSender(expAddr, pL1Hdr->SourceAddr)) {
         rc = E_OK;
 
-        DEBUG2_PRINTF("\nHasL2pckt: 0x7E?=0x%02X 0x656003FF?=0x%08X\n", BTrdBuf[18], get_u32(BTrdBuf+19));
+        DEBUG2_PRINTF("HasL2pckt: 0x7E?=0x%02X 0x656003FF?=0x%08X\n", BTrdBuf[18], get_u32(BTrdBuf+19));
         if ((hasL2pckt == 0) && (BTrdBuf[18] == 0x7E) && (get_u32(BTrdBuf+19) == 0x656003FF)) {
           hasL2pckt = true;
         }
@@ -235,7 +236,7 @@ E_RC getPacket(uint8_t expAddr[6], int wait4Command) {
         if (hasL2pckt) {
           //Copy BTrdBuf to pcktBuf
           bool escNext = false;
-          DEBUG2_PRINTF("PacketLength=%d\n", pL1Hdr->pkLength);
+          DEBUG3_PRINTF("PacketLength=%d\n", pL1Hdr->pkLength);
 
           for (int i=sizeof(L1Hdr); i<pL1Hdr->pkLength; i++) {
             pcktBuf[index] = BTrdBuf[i];
@@ -352,7 +353,7 @@ E_RC getInverterDataCfl(uint32_t command, uint32_t first, uint32_t last) {
             value32 = 0;
             value64 = 0;
             uint16_t recordsize = 4 * ((uint32_t)pcktBuf[5] - 9) / (get_u32(pcktBuf + 37) - get_u32(pcktBuf + 33) + 1);
-            DEBUG2_PRINTF("\rpcktID=0x%04x recsize=%d BufPos=%d pcktCnt=%04x", 
+            DEBUG2_PRINTF("\npcktID=0x%04x recsize=%d BufPos=%d pcktCnt=%04x", 
                             rcvpcktID,   recordsize, pcktBufPos, pcktcount);
             for (uint16_t ii = 41; ii < pcktBufPos - 3; ii += recordsize) {
               uint8_t *recptr = pcktBuf + ii;
@@ -373,28 +374,40 @@ E_RC getInverterDataCfl(uint32_t command, uint32_t first, uint32_t last) {
                 value32 = get_u32(recptr + 16);
                 DEBUG3_PRINTF("\nvalue32=%d=0x%08x",value32, value32);
               }
+              if(value32 < -1){
+                value32  =0;
+              }
+              if(value64 < -1){
+                value64  =0;
+              }
+              Serial.print(value32);
               switch (lri) {
               case GridMsTotW: //SPOT_PACTOT
                   //This function gives us the time when the inverter was switched off
-                  //pInvData->SleepTime = datetime;
+                  pInvData->LastTime = datetime;
                   pInvData->Pac = value32;
                   //debug_watt("SPOT_PACTOT", value32, datetime);
-                  DEBUG1_PRINTF("\nPac %15.3f kW ", tokW(value32));
-                  printUnixTime(datetime);
+                  printUnixTime(charBuf, datetime);
+                  DEBUG1_PRINTF("\nPac %15.3f kW GMT:%s", tokW(value32), charBuf);
+                  client.publish(MQTT_BASE_TOPIC "instant_ac",  String(value32), true);
+
                   break;
        
               case GridMsWphsA: //SPOT_PAC1
                   pInvData->Pmax = value32;
                   //debug_watt("SPOT_PAC1", value32, datetime);
                   DEBUG1_PRINTF("\nPmax %14.2f kW ", tokW(value32));
-                  printUnixTime(datetime);
+
+                  //printUnixTime(charBuf, datetime);
                   break;
        
               case GridMsPhVphsA: //SPOT_UAC1
                   pInvData->Uac = value32;
                   //debug_volt("SPOT_UAC1", value32, datetime);
                   DEBUG1_PRINTF("\nUac %15.2f V  ", toVolt(value32));
-                  printUnixTime(datetime);
+                  client.publish(MQTT_BASE_TOPIC "ac_voltage",  String(toVolt(value32)), true);
+
+                  //printUnixTime(charBuf, datetime);
                   break;
        
               case GridMsAphsA_1: //SPOT_IAC1
@@ -402,35 +415,45 @@ E_RC getInverterDataCfl(uint32_t command, uint32_t first, uint32_t last) {
                   pInvData->Iac = value32;
                   //debug_amp("SPOT_IAC1", value32, datetime);
                   DEBUG1_PRINTF("\nIac %15.2f A  ", toAmp(value32));
-                  printUnixTime(datetime);
+                   client.publish(MQTT_BASE_TOPIC "ac_current",  String(toAmp(value32)), true);
+
+                  //printUnixTime(charBuf, datetime);
                   break;
        
               case GridMsHz: //SPOT_FREQ
                   pInvData->Freq = value32;
                   DEBUG1_PRINTF("\nFreq %14.2f Hz ", toHz(value32));
-                  printUnixTime(datetime);
+                  client.publish(MQTT_BASE_TOPIC "frequency",  String(toHz(value32)), true);
+
+                  //printUnixTime(charBuf, datetime);
                   break;
        
               case DcMsWatt: //SPOT_PDC1 / SPOT_PDC2
                   DEBUG1_PRINTF("\nPDC %15.2f kW ", tokW(value32));
-                  printUnixTime(datetime);
+                  client.publish(MQTT_BASE_TOPIC "dc_power",  String(tokW(value32)), true);
+
+                  //printUnixTime(charBuf, datetime);
                   break;
        
               case DcMsVol: //SPOT_UDC1 / SPOT_UDC2
                   pInvData->Udc = value32;
                   DEBUG1_PRINTF("\nUdc %15.2f V  ", toVolt(value32));
-                  printUnixTime(datetime);
+                  client.publish(MQTT_BASE_TOPIC "dc_voltage",  String(toVolt(value32)), true);
+
+                  //printUnixTime(charBuf, datetime);
                   break;
        
               case DcMsAmp: //SPOT_IDC1 / SPOT_IDC2
                   pInvData->Idc = value32;
                   DEBUG1_PRINTF("\nIdc %15.2f A  ", toAmp(value32));
-                  printUnixTime(datetime);
+                  //printUnixTime(charBuf, datetime);
                   if ((pInvData->Udc!=0) && (pInvData->Idc != 0))
                     pInvData->Eta = ((uint64_t)pInvData->Uac * (uint64_t)pInvData->Iac * 10000) /
                                     ((uint64_t)pInvData->Udc * (uint64_t)pInvData->Idc );
                   else pInvData->Eta = 0;
                   DEBUG1_PRINTF("\nEfficiency %8.2f %%", toPercent(pInvData->Eta));
+                  client.publish(MQTT_BASE_TOPIC "efficiency",  String(toPercent(pInvData->Eta)), true);
+
                   break;
        
               case MeteringDyWhOut: //SPOT_ETODAY
@@ -439,35 +462,38 @@ E_RC getInverterDataCfl(uint32_t command, uint32_t first, uint32_t last) {
                   pInvData->EToday = value64;
                   //debug_kwh("SPOT_ETODAY", value64, datetime);
                   DEBUG1_PRINTF("\nE-Today %11.3f kWh", tokWh(value64));
-                  printUnixTime(datetime);
+                  client.publish(MQTT_BASE_TOPIC "generation_today", uint64ToString(value64), true);
+
+                  //printUnixTime(charBuf, datetime);
                   break;
        
               case MeteringTotWhOut: //SPOT_ETOTAL
                   //In case SPOT_ETODAY missing, this function gives us inverter time (eg: SUNNY TRIPOWER 6.0)
                   //pInvData->InverterDatetime = datetime;
                   pInvData->ETotal = value64;
+                  client.publish(MQTT_BASE_TOPIC "generation_total", uint64ToString(value64), true);
                   //debug_kwh("SPOT_ETOTAL", value64, datetime);
                   DEBUG1_PRINTF("\nE-Total %11.3f kWh", tokWh(value64));
-                  printUnixTime(datetime);
+                  //printUnixTime(charBuf, datetime);
                   break;
        
               case MeteringTotOpTms: //SPOT_OPERTM
                   pInvData->OperationTime = value64;
                   //debug_hour("SPOT_OPERTM", value64, datetime);
                   DEBUG1_PRINTF("\nOperTime  %7.3f h  ", toHour(value64));
-                  printUnixTime(datetime);
+                  //printUnixTime(charBuf, datetime);
                   break;
        
               case MeteringTotFeedTms: //SPOT_FEEDTM
                   pInvData->FeedInTime = value64;
                   //debug_hour("SPOT_FEEDTM", value64, datetime);
                   DEBUG1_PRINTF("\nFeedTime  %7.3f h  ", toHour(value64));
-                  printUnixTime(datetime);
+                  //printUnixTime(charBuf, datetime);
                   break;
        
               case CoolsysTmpNom:
                   //pInvData->Temperature = value32;
-                  DEBUG1_PRINTF("\nTemp.     %7.3f °C ", toTemp(value32));
+                  DEBUG1_PRINTF("\nTemp.     %7.3f ï¿½C ", toTemp(value32));
                   break;
        
               case MeteringGridMsTotWOut:
@@ -636,7 +662,7 @@ E_RC getInverterData(enum getInverterDataType type) {
 }
 
 //-------------------------------------------------------------------------
-bool getBT_SignalStrength() {
+float getBT_SignalStrength() {
   DEBUG2_PRINT("\n\n*** SignalStrength ***");
   writePacketHeader(pcktBuf, 0x03, pInvData->BTAddress);
   writeByte(pcktBuf,0x05);
@@ -645,12 +671,13 @@ bool getBT_SignalStrength() {
   BTsendPacket(pcktBuf);
 
   getPacket(pInvData->BTAddress, 4);
-  DEBUG1_PRINTF("BT-Signal %9.1f %%", ((float)BTrdBuf[22] * 100.0f / 255.0f));
-  return true;
+  float signal = ((float)BTrdBuf[22] * 100.0f / 255.0f);
+  DEBUG1_PRINTF("BT-Signal %9.1f %%", signal);
+  return signal;
 }
 //-------------------------------------------------------------------------
 E_RC initialiseSMAConnection() {
-  DEBUG2_PRINTLN("Connected succesfully! -> Initialize");
+  DEBUG2_PRINTLN(" -> Initialize");
   getPacket(pInvData->BTAddress, 2); // 1. Receive
   pInvData->NetID = pcktBuf[22];
   DEBUG2_PRINTF("SMA netID=%02X\n", pInvData->NetID);
@@ -687,6 +714,7 @@ E_RC initialiseSMAConnection() {
     return E_CHKSUM;
 
   pInvData->Serial = get_u32(pcktBuf + 57);
+
   DEBUG1_PRINTF("Serial Nr: %lu\n", pInvData->Serial);
   return E_OK;
 }
